@@ -27,7 +27,7 @@ java -jar zzuli-evaluation.jar
 ```bash
 cd kotlin
 ./gradlew jar
-java -jar build/libs/kotlin-1.0-SNAPSHOT.jar
+java -jar build/libs/zzuli-evaluation.jar
 ```
 
 **登录方式**：支持 📱 扫码登录 和 🔑 账号密码登录
