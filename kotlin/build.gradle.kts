@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "org.shiyi"
-version = "1.0-SNAPSHOT"
+version = "v1.0.0"
 
 repositories {
     mavenCentral()
