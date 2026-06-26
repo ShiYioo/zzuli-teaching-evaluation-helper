@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ZZULI教学评价一键满分
 // @namespace    https://jwgl.zzuli.edu.cn/
-// @version      1.0.0
-// @description  郑州轻工业大学教学综合管理平台 - 教学评价一键满分功能，采用 iOS 设计美学风格
+// @version      1.1.0
+// @description  郑州轻工业大学教学综合管理平台 - 教学评价一键高分功能（自动避免各项分数完全一致以符合新规），采用 iOS 设计美学风格
 // @author       ShiYi
 // @match        https://jwgl.zzuli.edu.cn/student/wspj_tjzbpj_wjdcb_pj.jsp*
 // @grant        none
@@ -111,7 +111,7 @@
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right: 6px; vertical-align: middle;">
                 <path d="M8 1L10.163 5.38197L15 6.12017L11.5 9.52984L12.326 14.3279L8 12.0656L3.674 14.3279L4.5 9.52984L1 6.12017L5.837 5.38197L8 1Z" fill="currentColor"/>
             </svg>
-            <span style="vertical-align: middle;">一键满分</span>
+            <span style="vertical-align: middle;">一键高分</span>
         `;
 
         applyButtonStyle(button, CONFIG.primaryButtonStyle);
@@ -163,27 +163,49 @@
             const zbSize = parseInt(zbSizeElement.value);
             console.log(`共找到 ${zbSize} 个评价指标`);
 
-            // 填充所有指标项为满分
+            // 第一遍：收集每个指标的满分(mf)与下限(Blur_me 第二个参数)
+            const items = [];
             for (let i = 0; i < zbSize; i++) {
                 const inputElement = document.getElementById(`sel_scorecj${i}`);
-
-                if (inputElement) {
-                    // 获取满分值（从元素属性中读取）
-                    const maxScore = inputElement.getAttribute('mf') || '10';
-
-                    // 设置为满分
-                    inputElement.value = maxScore;
-
-                    // 触发 change 事件以确保表单验证
-                    const changeEvent = new Event('change', { bubbles: true });
-                    inputElement.dispatchEvent(changeEvent);
-
-                    successCount++;
-                    console.log(`指标 ${i + 1} 已填充满分: ${maxScore}`);
-                } else {
+                if (!inputElement) {
                     failCount++;
                     console.warn(`指标 ${i + 1} 的输入框未找到`);
+                    continue;
                 }
+                const maxScore = Math.floor(parseFloat(inputElement.getAttribute('mf')) || 10);
+                // 从 onblur="Blur_me(upper,lower,i)" 解析分数下限
+                let lower = 1;
+                const onblurAttr = inputElement.getAttribute('onblur') || '';
+                const m = onblurAttr.match(/Blur_me\([\d.]+,\s*([\d.]+)/);
+                if (m) lower = parseFloat(m[1]);
+                items.push({ el: inputElement, max: maxScore, lower: lower });
+            }
+
+            // 计算填写分数：默认全部满分；若会全部相同（新规禁止），则将最后一项降低 1 分
+            const scores = items.map(it => it.max);
+            const allSame = scores.length >= 2 && scores.every(v => v === scores[0]);
+            let varied = false;
+            if (allSame) {
+                const last = items.length - 1;
+                const reduced = Math.max(items[last].lower, items[last].max - 1);
+                if (reduced < items[last].max) {
+                    scores[last] = reduced;
+                    varied = true;
+                }
+            }
+
+            // 第二遍：填写分数（使用合法的整数格式，避免触发 Blur_me 清空）
+            items.forEach((it, idx) => {
+                it.el.value = String(scores[idx]);
+                const changeEvent = new Event('change', { bubbles: true });
+                it.el.dispatchEvent(changeEvent);
+                successCount++;
+                console.log(`指标 ${idx + 1} 已填充: ${scores[idx]}`);
+            });
+
+            // 刷新总分显示（若页面提供该方法）
+            if (typeof refreshTotalScore === 'function') {
+                try { refreshTotalScore(); } catch (e) {}
             }
 
             // 处理问卷文本区域（可选）
@@ -210,7 +232,8 @@
 
             // 显示结果 - 使用 iOS 风格提示
             if (successCount > 0) {
-                const message = `成功填充 ${successCount} 项${failCount > 0 ? `\n失败 ${failCount} 项` : ''}\n\n请检查后点击"提交"按钮保存`;
+                const variedTip = varied ? '\n（已自动调整 1 项分数以符合"不得全部相同"的新规）' : '';
+                const message = `成功填充 ${successCount} 项高分${failCount > 0 ? `\n失败 ${failCount} 项` : ''}${variedTip}\n\n请检查后点击"提交"按钮保存`;
                 showIOSAlert('填充完成', message, 'success');
             } else {
                 showIOSAlert('填充失败', '未找到可填充的评分项', 'error');
