@@ -1038,7 +1038,9 @@ class EvaluationService(private val httpClient: HttpClient) {
             }
 
             // 第二步：构建并提交评价数据
-            val indicatorData = buildIndicatorData(indicators)
+            // 构建分数：默认全部满分，指标数>=2 时将最后一项降1分（新规要求各项不得完全一致）
+            val scores = buildScores(indicators.size)
+            val indicatorData = buildIndicatorData(indicators, scores)
             val questionnaireData = buildQuestionnaireData(questionnaires)
 
             // 构建完整的表单参数（按照浏览器提交的顺序）
@@ -1060,7 +1062,7 @@ class EvaluationService(private val httpClient: HttpClient) {
                 "wspjZbpjWjdcForm.wjmb_m" to wjmb,
                 "bfzfs_xx" to "",
                 "bfzfs_sx" to "",
-                "totalcj" to "100",
+                "totalcj" to (if (indicators.isNotEmpty()) scores.sum().toString() else "99"),
                 "zbSize" to indicators.size.toString(),
                 "zbmb" to zbmb,
                 "wjmb" to wjmb,
@@ -1070,7 +1072,7 @@ class EvaluationService(private val httpClient: HttpClient) {
 
             // 添加每个指标的分数字段 sel_scorecj*
             indicators.forEachIndexed { index, _ ->
-                params["sel_scorecj$index"] = "10"
+                params["sel_scorecj$index"] = scores[index].toString()
             }
 
             // 添加每个问卷的文本字段 area*
@@ -1104,23 +1106,37 @@ class EvaluationService(private val httpClient: HttpClient) {
     }
 
     /**
-     * 构建满分指标数据
-     * 格式：分数@指标代码@等级代码;
-     * 例如：10@0001@ ;10@0002@ ;...
+     * 构建指标分数列表：默认全部满分；指标数>=2 时将最后一项降 1 分，
+     * 以符合"各项评价指标得分一致时不能提交"的新规。
      */
-    private fun buildIndicatorData(indicators: List<String>): String {
+    private fun buildScores(count: Int, maxScore: Int = 10): List<Int> {
+        if (count <= 0) return emptyList()
+        val scores = MutableList(count) { maxScore }
+        if (count >= 2) {
+            scores[count - 1] = maxScore - 1
+        }
+        return scores
+    }
+
+    /**
+     * 构建指标数据
+     * 格式：分数@指标代码@等级代码;
+     * 例如：10@0001@ ;9@0002@ ;...
+     */
+    private fun buildIndicatorData(indicators: List<String>, scores: List<Int>): String {
         if (indicators.isEmpty()) {
             // 如果没有获取到指标，使用默认的10个
+            val defaultScores = buildScores(10)
             return (1..10).joinToString(";") { i ->
                 val zbdm = String.format("%04d", i)
-                "10@$zbdm@ "
+                "${defaultScores[i - 1]}@$zbdm@ "
             } + ";"
         }
 
-        // 使用实际获取的指标ID
-        return indicators.joinToString(";") { zbdm ->
-            "10@$zbdm@ "  // 分数@指标代码@等级代码（空格）
-        } + ";"
+        // 使用实际获取的指标ID与分数
+        return indicators.mapIndexed { idx, zbdm ->
+            "${scores.getOrElse(idx) { 10 }}@$zbdm@ "  // 分数@指标代码@等级代码（空格）
+        }.joinToString(";") + ";"
     }
 
     /**
